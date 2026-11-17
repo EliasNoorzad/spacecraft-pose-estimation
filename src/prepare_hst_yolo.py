@@ -1,5 +1,6 @@
 """DLVS3-HST PNG/JSON -> YOLOv8 Pose with visibility and approximate boxes."""
 
+import argparse
 import json
 import math
 import random
@@ -9,10 +10,6 @@ from pathlib import Path
 
 from PIL import Image
 
-ROOT = Path(__file__).resolve().parent
-METADATA = ROOT / "0000000_metadata.json"
-IMAGE_DIR = ROOT / "0000000"
-OUTPUT = ROOT / "hst_yolo_pose_fixed"
 NUM_KEYPOINTS = 37
 BOX_PADDING = 0.10
 SEED = 42
@@ -37,9 +34,9 @@ def index_pngs(root):
     return by_stem
 
 
-def locate_png(frame, by_stem):
+def locate_png(frame, by_stem, metadata_dir):
     raw_path = str(frame["ImagePath"]).replace("\\", "/")
-    expected = ROOT / Path(raw_path).with_suffix(".png")
+    expected = metadata_dir / Path(raw_path).with_suffix(".png")
     if expected.is_file():
         return expected
     candidates = by_stem.get(Path(raw_path).stem, [])
@@ -92,21 +89,31 @@ def box_from_points(positions, w, h):
     return box
 
 
-def main():
-    if not METADATA.is_file() or not IMAGE_DIR.is_dir():
-        raise SystemExit("Put this script beside 0000000_metadata.json and 0000000/ PNG folder")
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--images", type=Path, required=True, help="Folder containing HST PNG images")
+    parser.add_argument("--metadata", type=Path, required=True, help="JSON annotation file")
+    parser.add_argument("--output", type=Path, required=True, help="Destination for the processed YOLO dataset")
+    args = parser.parse_args(argv)
+    image_dir = args.images.expanduser().resolve()
+    metadata = args.metadata.expanduser().resolve()
+    output = args.output.expanduser().resolve()
+    if not metadata.is_file():
+        raise SystemExit(f"Metadata file not found: {metadata}")
+    if not image_dir.is_dir():
+        raise SystemExit(f"Images folder not found: {image_dir}")
 
-    with METADATA.open("r", encoding="utf-8-sig") as f:
+    with metadata.open("r", encoding="utf-8-sig") as f:
         frames = list(frames_from(json.load(f)))
     if not frames:
         raise SystemExit("No frames found in metadata")
 
-    image_by_stem = index_pngs(IMAGE_DIR)
+    image_by_stem = index_pngs(image_dir)
     items = []
     missing = bad = total_invalid = 0
     seen_paths = set()
     for frame in frames:
-        image_path = locate_png(frame, image_by_stem)
+        image_path = locate_png(frame, image_by_stem, metadata.parent)
         if image_path is None:
             missing += 1
             continue
@@ -151,8 +158,8 @@ def main():
     splits = {"train":items[:a], "val":items[a:b], "test":items[b:]}
 
     for split, subset in splits.items():
-        idest = OUTPUT/"images"/split
-        ldest = OUTPUT/"labels"/split
+        idest = output/"images"/split
+        ldest = output/"labels"/split
         idest.mkdir(parents=True,exist_ok=True)
         ldest.mkdir(parents=True,exist_ok=True)
         for image_path, label in subset:
@@ -163,8 +170,8 @@ def main():
             shutil.copy2(image_path,dest)
             (ldest / (image_path.stem+".txt")).write_text(label,encoding="utf-8")
 
-    (OUTPUT/"data.yaml").write_text(
-        f'path: "{OUTPUT.resolve().as_posix()}"\n'
+    (output/"data.yaml").write_text(
+        f'path: "{output.as_posix()}"\n'
         'train: images/train\nval: images/val\ntest: images/test\n'
         'names:\n  0: HST\nkpt_shape: [37, 3]\n',
         encoding="utf-8",
@@ -172,7 +179,7 @@ def main():
     print(f"Done: train={len(splits['train'])} val={len(splits['val'])} test={len(splits['test'])}")
     print(f"Keypoints masked as invalid/out-of-frame: {total_invalid}")
     print("All generated labels passed pixel-coordinate round-trip verification")
-    print(f"Dataset: {OUTPUT}")
+    print(f"Dataset: {output}")
     print("Important: in-frame does NOT guarantee unoccluded; boxes are approximations")
 
 
