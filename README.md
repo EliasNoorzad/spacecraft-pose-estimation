@@ -1,7 +1,5 @@
 # Spacecraft Pose Estimation
 
-Master's thesis project at **Politecnico di Torino**: **"Autonomous Spacecraft Navigation with Artificial Intelligence and Visual Pose Estimation."**
-
 ## Project overview
 
 This project investigates autonomous spacecraft navigation using monocular vision and deep learning to estimate a target spacecraft's six-degree-of-freedom (6-DoF) pose: its relative position and orientation. The current implementation combines **YOLOv8s-Pose** for 2D keypoint detection with a geometric **Perspective-n-Point (PnP)** solver for camera-relative pose estimation.
